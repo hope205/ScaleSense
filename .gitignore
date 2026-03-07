@@ -7,7 +7,14 @@ __pycache__/
 *.so
 
 
-.scale-venv/
+.agents/
+.vscode/
+scale/
+
+chroma_db/
+
+=1.0
+1.0
 
 # Distribution / packaging
 .Python

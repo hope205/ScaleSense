@@ -67,7 +67,7 @@ resume_query_tool = FunctionTool.from_defaults(
 # 1. Define standard Python function with clear type hints and a docstring
 def related_candidates(query: str) -> str:
     """
-    Returns related candidates based on their resumes and the specified criteria given by the qery of the user.
+    Returns related candidates based on their resumes and the specified criteria given by the query of the user.
     Use this tool to find the most suitable candidates for a given position.
 
     Args:

@@ -263,6 +263,33 @@ class ResumeQueryProcessor:
             if candidate.node.metadata.get('file_path')
         ))
     
+    
+    async def candidates_retriever_from_jd(self,job_description: str):
+        # Use structured predict to infer the metadata filters and query string.
+        metadata_info = await self.get_metadata(job_description)
+        filters = MetadataFilters(
+        filters=[
+            MetadataFilter(key="domain", operator=FilterOperator.EQ, value=metadata_info.domain),
+            MetadataFilter(key="country", operator=FilterOperator.IN, value=metadata_info.country),
+            MetadataFilter(key="skills", operator=FilterOperator.IN, value=metadata_info.skills),
+            MetadataFilter(key="years_of_experience", operator=FilterOperator.GTE, value=metadata_info.years_of_experience)
+        ],
+        condition=FilterCondition.OR
+    )
+        print(f"> Inferred filters: {filters.json()}")
+        retriever = self.index.as_retriever(
+        retrieval_mode="chunks",
+        metadata_filters=filters,
+        )
+        # run query
+        candidates_based_on_jd = retriever.retrieve(job_description)
+
+        candidates_file_paths = self.get_jd_candidates_file_paths(candidates_based_on_jd)
+        
+        return candidates_file_paths
+
+    
+        
     # if __name__ == "__main__":
         # Example usage
         # processor = ResumeQueryProcessor(llm=llm, metadata_schema=YourMetadataSchema)

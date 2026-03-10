@@ -7,7 +7,10 @@ from llama_index.core.vector_stores import (
     FilterOperator,
     FilterCondition
 )
-
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageContext
+from llama_index.vector_stores.chroma import ChromaVectorStore
+import chromadb
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
 
 # 1. Domains
@@ -108,6 +111,22 @@ class Metadata(BaseModel):
 
 
 
+def initalize_db(name):
+    # 1. Initialize your ChromaDB Client and Vector Store
+    db = chromadb.PersistentClient(path="../chroma_db")
+    chroma_collection = db.get_or_create_collection(name)
+    vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+
+    local_embed_model = HuggingFaceEmbedding(
+    model_name="sentence-transformers/all-MiniLM-L6-v2"
+   )
+
+    index = VectorStoreIndex.from_vector_store(
+        vector_store=vector_store,
+        embed_model=local_embed_model
+    )
+
+    return index
 
 
 

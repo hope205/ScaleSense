@@ -1,41 +1,77 @@
 import os
 import tempfile
 import streamlit as st
-
-# --- Import your existing backend functions here ---
-# from your_backend_file import run_ingestion_pipeline, initialize_agent
+from functions.indexing import Extractpdf
+from functions.agent_processor import ResumeQueryProcessor
+import asyncio
 
 st.set_page_config(page_title="AI Resume Screener", page_icon="📄", layout="wide")
 
-# Streamlit reruns the script on every button click. We use session_state 
-# to remember the chat history and whether the database is ready.
+# ==========================================
+# 1. INITIALIZE SESSION STATE
+# ==========================================
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "assistant", "content": "Hello! Upload some CVs, name your database, and let's find your ideal candidate."}
+        {"role": "assistant", "content": "Hello! Enter your agent's name to connect to an existing database, or upload new CVs to get started."}
     ]
 if "db_indexed" not in st.session_state:
     st.session_state.db_indexed = False
 if "agent" not in st.session_state:
     st.session_state.agent = None
 
-
-
-
-
+# ==========================================
+# 2. SIDEBAR: CONNECT & UPLOAD
+# ==========================================
 with st.sidebar:
-    st.header("⚙️ Database Setup")
+    st.header("⚙️ Agent Setup")
     
-    # User names the ChromaDB collection
-    collection_name = st.text_input("Name this Candidate Pool (e.g., 'IT_Batch_1')", value="candidate_pool")
+    # 1. User names the Agent / Database
+    collection_name = st.text_input("Agent / Database Name", value="IT_Candidates")
+
+    # --- ACTION 1: Connect to Existing Database ---
+    if st.button("Connect to Agent"):
+        if not collection_name:
+            st.error("Please provide an agent name.")
+        else:
+            with st.spinner(f"Connecting to {collection_name}..."):
+                
+                # 1. Initialize the extractor
+                extractor = Extractpdf(collection_name=collection_name)
+                processor = ResumeQueryProcessor(llm=llm, index = index)
+                
+                # 2. STRICT CHECK: Does this database actually have resumes?
+                if not extractor.is_database_populated():
+                    st.session_state.db_indexed = False
+                    st.error(f"❌ No records found for '{collection_name}'. Please check the name or upload new resumes below.")
+                else:
+                    try:
+                        # 3. Only initialize the heavy LlamaIndex agent if the DB is valid
+                        asyncio.run(extractor.initialize())
+                        
+                        st.session_state.agent = extractor.agent
+                        st.session_state.db_indexed = True
+                        st.success(f"✅ Connected to '{collection_name}'! Ready to chat.")
+                        
+                    except Exception as e:
+                        st.session_state.db_indexed = False
+                        st.error(f"Could not initialize the agent: {str(e)}")
+
+
+
+
+
+
+    st.divider()
     
-    # Multiple file uploader
+    # --- ACTION 2: Upload New Resumes ---
+    st.subheader("Add New Resumes")
     uploaded_files = st.file_uploader(
         "Upload CVs (PDFs only)", 
         type=["pdf"], 
         accept_multiple_files=True
     )
     
-    if st.button("Index Resumes", type="primary"):
+    if st.button("Upload & Index", type="primary"):
         if not uploaded_files:
             st.error("Please upload at least one CV first.")
         elif not collection_name:
@@ -43,11 +79,9 @@ with st.sidebar:
         else:
             with st.spinner("Processing and Indexing CVs... This might take a moment."):
                 
-                # Create a temporary directory to save the uploaded files
                 with tempfile.TemporaryDirectory() as temp_dir:
                     file_paths = []
                     
-                    # Save each uploaded file to the temp directory
                     for uploaded_file in uploaded_files:
                         temp_path = os.path.join(temp_dir, uploaded_file.name)
                         with open(temp_path, "wb") as f:
@@ -55,45 +89,43 @@ with st.sidebar:
                         file_paths.append(temp_path)
                     
                     try:
-                        # ---------------------------------------------------------
-                        # 🔌 PLUG IN YOUR LlamaIndex INGESTION PIPELINE HERE
-                        # Pass the 'file_paths' and 'collection_name' to your backend
-                        # run_ingestion_pipeline(file_paths, collection_name)
-                        # ---------------------------------------------------------
+                        # Initialize extractor for the current collection
+                        extractor = Extractpdf(collection_name=collection_name)
+                        asyncio.run(extractor.initialize())
                         
-                        # ---------------------------------------------------------
-                        # 🔌 PLUG IN YOUR AGENT INITIALIZATION HERE
-                        # st.session_state.agent = initialize_agent(collection_name)
-                        # ---------------------------------------------------------
-                        
+                        # Run extraction and ingestion
+                        resume_data = asyncio.run(extractor.batch_extract_resumes(directory_path=temp_dir))
+                        asyncio.run(extractor.ingest(raw_resume_data=resume_data))
+
+                        # Save agent to session state and unlock chat
+                        st.session_state.agent = extractor.agent
                         st.session_state.db_indexed = True
                         st.success(f"Successfully indexed {len(file_paths)} resumes into '{collection_name}'!")
                         
                     except Exception as e:
                         st.error(f"An error occurred during indexing: {str(e)}")
 
+
+
 # ==========================================
 # 3. MAIN AREA: CHAT INTERFACE
 # ==========================================
 st.title("📄 AI Resume Screening Agent")
 
-# Display chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Chat input
 if prompt := st.chat_input("Ask me to find candidates, rank resumes, or summarize experience..."):
     
+    # Block chat if they haven't connected or indexed successfully
     if not st.session_state.db_indexed:
-        st.warning("Please upload and index resumes in the sidebar before chatting.")
+        st.warning("Please connect to an existing agent or upload resumes in the sidebar before chatting.")
     else:
-        # Add user message to chat history and display it
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Generate agent response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
@@ -103,7 +135,6 @@ if prompt := st.chat_input("Ask me to find candidates, rank resumes, or summariz
                     # full_response = str(response)
                     # ---------------------------------------------------------
                     
-                    # Mock response for testing the UI before backend is connected
                     full_response = f"*(Mock Response)* I have searched the '{collection_name}' database for: '{prompt}'"
                     
                     st.markdown(full_response)
@@ -111,3 +142,129 @@ if prompt := st.chat_input("Ask me to find candidates, rank resumes, or summariz
                     
                 except Exception as e:
                     st.error(f"Agent encountered an error: {str(e)}")
+
+
+
+
+
+
+# import os
+# import tempfile
+# import streamlit as st
+# from functions.indexing import Extractpdf
+# import asyncio
+
+
+
+
+# st.set_page_config(page_title="AI Resume Screener", page_icon="📄", layout="wide")
+
+# # Streamlit reruns the script on every button click. We use session_state 
+# # to remember the chat history and whether the database is ready.
+# if "messages" not in st.session_state:
+#     st.session_state.messages = [
+#         {"role": "assistant", "content": "Hello! Upload some CVs, name your database, and let's find your ideal candidate."}
+#     ]
+# if "db_indexed" not in st.session_state:
+#     st.session_state.db_indexed = False
+# if "agent" not in st.session_state:
+#     st.session_state.agent = None
+
+
+
+
+
+# with st.sidebar:
+#     st.header("⚙️ Database Setup")
+    
+#     # User names the ChromaDB collection
+#     collection_name = st.text_input("Name this Candidate Pool (e.g., 'IT_Batch_1')", value="default")
+
+#     extractor = Extractpdf(collection_name= collection_name)
+
+
+
+#     asyncio.run(extractor.initialize())
+
+    
+#     # Multiple file uploader
+#     uploaded_files = st.file_uploader(
+#         "Upload CVs (PDFs only)", 
+#         type=["pdf"], 
+#         accept_multiple_files=True
+#     )
+    
+#     if st.button("Index Resumes", type="primary"):
+#         if not uploaded_files:
+#             st.error("Please upload at least one CV first.")
+#         elif not collection_name:
+#             st.error("Please provide a name for the database.")
+#         else:
+#             with st.spinner("Processing and Indexing CVs... This might take a moment."):
+                
+#                 # Create a temporary directory to save the uploaded files
+#                 with tempfile.TemporaryDirectory() as temp_dir:
+#                     file_paths = []
+                    
+#                     # Save each uploaded file to the temp directory
+#                     for uploaded_file in uploaded_files:
+#                         temp_path = os.path.join(temp_dir, uploaded_file.name)
+#                         with open(temp_path, "wb") as f:
+#                             f.write(uploaded_file.getbuffer())
+#                         file_paths.append(temp_path)
+                    
+#                     try:
+                       
+                
+#                        resume_data = asyncio.run(extractor.batch_extract_resumes(directory_path=temp_dir))
+
+#                        asyncio.run(extractor.ingest(raw_resume_data=resume_data))
+
+#                         # After successful indexing, we can initialize the agent to use this database
+#                        st.session_state.agent = extractor.agent
+                        
+#                        st.session_state.db_indexed = True
+#                        st.success(f"Successfully indexed {len(file_paths)} resumes into '{collection_name}'!")
+                        
+#                     except Exception as e:
+#                         st.error(f"An error occurred during indexing: {str(e)}")
+
+# # ==========================================
+# # 3. MAIN AREA: CHAT INTERFACE
+# # ==========================================
+# st.title("📄 AI Resume Screening Agent")
+
+# # Display chat history
+# for message in st.session_state.messages:
+#     with st.chat_message(message["role"]):
+#         st.markdown(message["content"])
+
+# # Chat input
+# if prompt := st.chat_input("Ask me to find candidates, rank resumes, or summarize experience..."):
+    
+#     if not st.session_state.db_indexed:
+#         st.warning("Please upload and index resumes in the sidebar before chatting.")
+#     else:
+#         # Add user message to chat history and display it
+#         st.session_state.messages.append({"role": "user", "content": prompt})
+#         with st.chat_message("user"):
+#             st.markdown(prompt)
+
+#         # Generate agent response
+#         with st.chat_message("assistant"):
+#             with st.spinner("Thinking..."):
+#                 try:
+#                     # ---------------------------------------------------------
+#                     # 🔌 PLUG IN YOUR LlamaIndex AGENT QUERY HERE
+#                     # response = st.session_state.agent.chat(prompt)
+#                     # full_response = str(response)
+#                     # ---------------------------------------------------------
+                    
+#                     # Mock response for testing the UI before backend is connected
+#                     full_response = f"*(Mock Response)* I have searched the '{collection_name}' database for: '{prompt}'"
+                    
+#                     st.markdown(full_response)
+#                     st.session_state.messages.append({"role": "assistant", "content": full_response})
+                    
+#                 except Exception as e:
+#                     st.error(f"Agent encountered an error: {str(e)}")

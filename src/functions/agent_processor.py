@@ -11,6 +11,8 @@ from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageCon
 from llama_index.vector_stores.chroma import ChromaVectorStore
 import chromadb
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.llms.huggingface_api import HuggingFaceInferenceAPI
+import os
 
 
 # 1. Domains
@@ -111,6 +113,7 @@ class Metadata(BaseModel):
 
 
 
+
 def initalize_db(name):
     # 1. Initialize your ChromaDB Client and Vector Store
     db = chromadb.PersistentClient(path="../chroma_db")
@@ -130,14 +133,20 @@ def initalize_db(name):
 
 
 
+# llm = HuggingFaceInferenceAPI(model_name="Qwen/Qwen2.5-Coder-32B-Instruct")
+
+llm = HuggingFaceInferenceAPI(model_name="Qwen/Qwen2.5-Coder-32B-Instruct",token=os.environ.get("HUGGING_FACE_HUB_TOKEN"))
+
+
 
 class ResumeQueryProcessor:
     def __init__(self, 
-                 llm, metadata_schema = Metadata, 
+                  metadata_schema = Metadata, 
                  global_skills: list[str] = global_skills, 
                  global_countries: list[str]  = global_countries, 
                  global_domains: list[str] = global_domains, 
                  global_years_of_experience: list[str] =  global_years_of_experience,
+                 db_name: str = None,
                  index = None
                  ):
         """
@@ -150,7 +159,8 @@ class ResumeQueryProcessor:
         self.global_countries = global_countries
         self.global_domains = global_domains
         self.global_years_of_experience = global_years_of_experience
-        self.index = index
+        self.index = initalize_db(db_name)
+        
 
     async def get_query_metadata(self, text: str):
         """Asynchronously extracts structured metadata from a given user query."""
@@ -261,8 +271,8 @@ class ResumeQueryProcessor:
 
 
 
-    @staticmethod
-    def get_candidates_file_paths(candidates: List[Dict[str, Any]]) -> List[str]:
+    # @staticmethod
+    def get_candidates_file_paths(self, candidates: List[Dict[str, Any]]) -> List[str]:
         """
         Extracts unique file paths from a list of candidate dictionaries 
         (e.g., the output of our custom deduplication tool).
@@ -270,8 +280,10 @@ class ResumeQueryProcessor:
         # Using a list comprehension inside a set is faster and cleaner!
         return list(set(candidate['file_path'] for candidate in candidates if 'file_path' in candidate))
 
-    @staticmethod
-    def get_jd_candidates_file_paths(candidates: List[Any]) -> List[str]:
+
+
+    # @staticmethod
+    def get_jd_candidates_file_paths(self, candidates: List[Any]) -> List[str]:
         """
         Extracts unique file paths from a list of LlamaIndex NodeWithScore objects
         (e.g., the raw output from a Query Engine or Retriever).

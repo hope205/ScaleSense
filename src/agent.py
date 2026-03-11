@@ -12,91 +12,158 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 import chromadb
 from llama_index.core import VectorStoreIndex
+from llama_index.llms.huggingface_api import HuggingFaceInferenceAPI
+from llama_index.core.tools import FunctionTool
+from llama_index.core.agent import ReActAgent
+import asyncio
+import os
+
+llm = HuggingFaceInferenceAPI(model_name="Qwen/Qwen2.5-Coder-32B-Instruct",token=os.environ.get("HUGGING_FACE_HUB_TOKEN"))
 
 
+class ResumeScreeningAgent:
+    def __init__(self, processor):
+        """
+        Initialize the agent by passing in your custom processor and the LLM.
+        """
+        # 1. Store the processor and LLM as class attributes
+        self.processor = processor
+        self.llm = llm
+        
+        # 2. Convert your class methods into LlamaIndex tools
+        search_tool = FunctionTool.from_defaults(fn=self._search_candidates_tool)
+        ranking_tool = FunctionTool.from_defaults(fn=self._rank_candidates_resume_tool)
+        
 
+        self.agent = AgentWorkflow.from_tools_or_functions(
+        [search_tool, ranking_tool],
+        llm=self.llm
+        )
 
+                                                                   
 
-
-llm = HuggingFaceInferenceAPI(model_name="Qwen/Qwen2.5-Coder-32B-Instruct")
-
-# 1. Initialize your ChromaDB Client and Vector Store
-db = chromadb.PersistentClient(path="../chroma_db")
-chroma_collection = db.get_or_create_collection("parsed_documents")
-
-vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-local_embed_model = HuggingFaceEmbedding(
-    model_name="sentence-transformers/all-MiniLM-L6-v2"
-)
-
-index = VectorStoreIndex.from_vector_store(
-    vector_store=vector_store,
-    embed_model=local_embed_model
-)
-
-processor = ResumeQueryProcessor(llm=llm, index = index)
-
-
-
-
-def rank_candidates_resume(query: str) -> str:
-    """
-    Ranks candidates based on their resumes and the specified criteria.
-    Use this tool to find the most suitable candidates for a given position.
-
-    Args:
-        query (str): The specific question to ask the database (e.g., "What are their key skills?").
-
-    """
+    async def _search_candidates_tool(self, query: str) -> str:
+        """
+        Searches the database for candidates matching specific criteria.
+        Use this tool whenever a user asks to find or search for candidates.
+        
+        Args:
+            query (str): The search criteria (e.g., "IT professional with 5 years experience").
+        """
+        print(f"🛠️ Tool Triggered: Searching for '{query}'")
+        
+        # Because we are inside the class, we have direct access to self.processor!
+        results = await self.processor.candidates_retriever_from_query(query=query)
+        
+        # Format the results into a clean string for the agent to read
+        return str(results)
     
-    nodes = processor.candidates_retriever_from_query(query=query)  # This will set the internal state of the processor with the retrieved candidates based on the query
+    async def _rank_candidates_resume_tool(self, job_description: str) -> str:
+        """
+        Ranks candidates based on their resumes and the job description.
+        Use this tool to find the most suitable candidates for a given position based on the job description.
 
+        Args:
+            job_description (str): The specific job description.
 
-    response = processor.process(query)
+        """
+        
+        nodes = await self.processor.candidates_retriever_from_jd(job_description)
+
+        # response = processor.process(query)
+        
+        return str(nodes)
     
-    return str(response)
+
+    async def chat(self, prompt: str) -> str:
+        """
+        The main entry point for your Streamlit app to talk to the agent.
+        """
+        response = await self.agent.run(prompt)
+        return str(response)
 
 
-resume_query_tool = FunctionTool.from_defaults(
-    fn=rank_candidates_resume, 
-    name="resume_query_tool", 
-    description="Tool to query candidate resumes based on specific criteria"
-    )
 
-
-# 1. Define standard Python function with clear type hints and a docstring
-def related_candidates(query: str) -> str:
-    """
-    Returns related candidates based on their resumes and the specified criteria given by the query of the user.
-    Use this tool to find the most suitable candidates for a given position.
-
-    Args:
-        query (str): The specific question to ask the database (e.g., "What are their key skills?").
-
-    """
+async def main():
+    # Example of how to initialize and test the agent independently
+    processor = ResumeQueryProcessor(db_name="test")
+    agent = ResumeScreeningAgent(processor=processor)
     
-    nodes = processor.candidates_retriever_from_query(query=query)  
-    return str(nodes)
-
-
-resume_query_tool = FunctionTool.from_defaults(
-    fn=related_candidates, 
-    name="related_job_candidates_query_tool", 
-    description="Tool to query candidate resumes based on specific criteria given by the user"
-    )
+    test_query = "Find IT professionals with 5 years of experience in Python."
+    response = await agent.chat(test_query)    
+    
+    print(f"Final Response: {response}")  
 
 
 
 
 
 
-query_agent = ReActAgent(
-    name="info_lookup",
-    description="Looks up information about XYZ",
-    system_prompt="Use your tool to query a RAG system to answer information about XYZ",
-    tools=[query_engine_tool],
-    llm=llm
-)
+if __name__ == "__main__":
+    asyncio.run(main())
+
+
+
+
+
+# def rank_candidates_resume(query: str) -> str:
+#     """
+#     Ranks candidates based on their resumes and the specified criteria.
+#     Use this tool to find the most suitable candidates for a given position.
+
+#     Args:
+#         query (str): The specific question to ask the database (e.g., "What are their key skills?").
+
+#     """
+    
+#     nodes = processor.candidates_retriever_from_query(query=query)  # This will set the internal state of the processor with the retrieved candidates based on the query
+
+
+#     response = processor.process(query)
+    
+#     return str(response)
+
+
+# resume_query_tool = FunctionTool.from_defaults(
+#     fn=rank_candidates_resume, 
+#     name="resume_query_tool", 
+#     description="Tool to query candidate resumes based on specific criteria"
+#     )
+
+
+# # 1. Define standard Python function with clear type hints and a docstring
+# def related_candidates(query: str) -> str:
+#     """
+#     Returns related candidates based on their resumes and the specified criteria given by the query of the user.
+#     Use this tool to find the most suitable candidates for a given position.
+
+#     Args:
+#         query (str): The specific question to ask the database (e.g., "What are their key skills?").
+
+#     """
+    
+#     nodes = processor.candidates_retriever_from_query(query=query)  
+#     return str(nodes)
+
+
+# resume_query_tool = FunctionTool.from_defaults(
+#     fn=related_candidates, 
+#     name="related_job_candidates_query_tool", 
+#     description="Tool to query candidate resumes based on specific criteria given by the user"
+#     )
+
+
+
+
+
+
+# query_agent = ReActAgent(
+#     name="info_lookup",
+#     description="Looks up information about XYZ",
+#     system_prompt="Use your tool to query a RAG system to answer information about XYZ",
+#     tools=[query_engine_tool],
+#     llm=llm
+# )
 
 
 # ranking_agent = function_agent = FunctionAgent(

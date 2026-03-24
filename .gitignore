@@ -11,6 +11,8 @@ __pycache__/
 .vscode/
 scale/
 
+data/
+
 chroma_db/
 
 =1.0

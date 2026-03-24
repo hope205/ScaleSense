@@ -21,6 +21,9 @@ from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_cloud.core.api_error import ApiError
 from typing import List, Optional
 from typing import List, Dict, Any
+from llama_index.core import Settings
+
+
 
 
 # Load environment variables (put LLAMA_CLOUD_API_KEY in your .env file)
@@ -31,10 +34,11 @@ llama_extract = LlamaExtract(api_key=os.getenv("LLAMA_CLOUD_API_KEY"))
 
 
 
+# local_embed_model = HuggingFaceEmbedding(
+#     model_name="sentence-transformers/all-MiniLM-L6-v2"
+# )
 
-local_embed_model = HuggingFaceEmbedding(
-    model_name="sentence-transformers/all-MiniLM-L6-v2"
-)
+local_embed_model = Settings.embed_model
 
 
 # 3. Define the Transformations for the Pipeline

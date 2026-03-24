@@ -13,7 +13,7 @@ import chromadb
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.huggingface_api import HuggingFaceInferenceAPI
 import os
-
+from llama_index.core import Settings
 
 # 1. Domains
 global_domains = [
@@ -120,9 +120,7 @@ def initalize_db(name):
     chroma_collection = db.get_or_create_collection(name)
     vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
 
-    local_embed_model = HuggingFaceEmbedding(
-    model_name="sentence-transformers/all-MiniLM-L6-v2"
-   )
+    local_embed_model = Settings.embed_model
 
     index = VectorStoreIndex.from_vector_store(
         vector_store=vector_store,
@@ -135,7 +133,7 @@ def initalize_db(name):
 
 # llm = HuggingFaceInferenceAPI(model_name="Qwen/Qwen2.5-Coder-32B-Instruct")
 
-llm = HuggingFaceInferenceAPI(model_name="Qwen/Qwen2.5-Coder-32B-Instruct",token=os.environ.get("HUGGING_FACE_HUB_TOKEN"))
+# Settings.llm = HuggingFaceInferenceAPI(model_name="Qwen/Qwen2.5-Coder-32B-Instruct",token=os.environ.get("HUGGING_FACE_HUB_TOKEN"))
 
 
 
@@ -147,13 +145,14 @@ class ResumeQueryProcessor:
                  global_domains: list[str] = global_domains, 
                  global_years_of_experience: list[str] =  global_years_of_experience,
                  db_name: str = None,
+                 llm = None,
                  index = None
                  ):
         """
         Initializes the processor with the LLM and the global context strings 
         required for metadata extraction.
         """
-        self.llm = llm
+        self.llm = llm or Settings.llm
         self.metadata_schema = metadata_schema # E.g., your Pydantic Metadata class
         self.global_skills = global_skills
         self.global_countries = global_countries

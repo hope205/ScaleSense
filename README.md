@@ -1,6 +1,6 @@
 # ScaleSense
 
-An AI agent that assits human resource managers to rank candidates that are most suitable for a particular job role
+An AI agent that assist human resource managers to rank candidates that are most suitable for a particular job role
 
 
 

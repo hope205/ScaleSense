@@ -1,10 +1,33 @@
 import os
 import tempfile
+import asyncio
+import re
+
 import streamlit as st
+from dotenv import load_dotenv
+from llama_index.core import Settings
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.llms.huggingface_api import HuggingFaceInferenceAPI
+
 from functions.indexing import Extractpdf
 from functions.agent_processor import ResumeQueryProcessor
-import asyncio
 from agent import ResumeScreeningAgent
+
+load_dotenv()
+
+Settings.embed_model = HuggingFaceEmbedding(
+    model_name="sentence-transformers/all-MiniLM-L6-v2",
+)
+Settings.llm = HuggingFaceInferenceAPI(
+    model_name="Qwen/Qwen2.5-Coder-32B-Instruct",
+    token=os.environ.get("HUGGING_FACE_HUB_TOKEN"),
+    is_chat_model=True,
+)
+
+
+def sanitize_collection_name(name: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9_-]", "_", name.strip())
+    return slug.strip("_-") or "default"
 
 
 
@@ -48,7 +71,7 @@ if "agent" not in st.session_state:
     st.session_state.agent = None
 
 
-if "agent" not in st.session_state:
+if "cv_agent" not in st.session_state:
     st.session_state.cv_agent = None
 
 if "query_processor" not in st.session_state:
@@ -69,12 +92,11 @@ with st.sidebar:
             st.error("Please provide an agent name.")
         else:
             with st.spinner(f"Connecting to {collection_name}..."):
-                
-                # 1. Initialize the extractor
-                extractor = Extractpdf(collection_name=collection_name)
-                processor = ResumeQueryProcessor(db_name= collection_name)
+                safe_name = sanitize_collection_name(collection_name)
+                extractor = Extractpdf(collection_name=safe_name)
+                processor = ResumeQueryProcessor(db_name=safe_name)
 
-                st.session_state.cv_agent = ResumeScreeningAgent(processor= processor)
+                st.session_state.cv_agent = ResumeScreeningAgent(processor=processor)
 
 
                 
@@ -128,8 +150,8 @@ with st.sidebar:
                         file_paths.append(temp_path)
                     
                     try:
-                        # Initialize extractor for the current collection
-                        extractor = Extractpdf(collection_name=collection_name)
+                        safe_name = sanitize_collection_name(collection_name)
+                        extractor = Extractpdf(collection_name=safe_name)
                         asyncio.run(extractor.initialize())
                         
                         # Run extraction and ingestion
@@ -168,13 +190,8 @@ if prompt := st.chat_input("Ask me to find candidates, rank resumes, or summariz
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
-                    # ---------------------------------------------------------
-                    # 🔌 PLUG IN YOUR LlamaIndex AGENT QUERY HERE
                     response = asyncio.run(st.session_state.cv_agent.chat(prompt))
                     full_response = str(response)
-                    # ---------------------------------------------------------
-                    
-                    full_response = f"*(Mock Response)* I have searched the '{collection_name}' database for: '{prompt}'"
                     
                     st.markdown(full_response)
                     st.session_state.messages.append({"role": "assistant", "content": full_response})

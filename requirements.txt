@@ -116,3 +116,8 @@ urllib3
 wcwidth
 wrapt
 yarl
+streamlit
+chromadb
+llama-index-vector-stores-chroma
+llama-index-embeddings-huggingface
+llama-index-embeddings-huggingface-api

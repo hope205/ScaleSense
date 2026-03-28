@@ -26,33 +26,16 @@ from llama_index.core import Settings
 
 
 
-# Load environment variables (put LLAMA_CLOUD_API_KEY in your .env file)
-load_dotenv(dotenv_path=r"C:\Users\ogida\Desktop\Hope work\Tech\Vscode_files\ScaleSense\.env")
+load_dotenv()
 
-# Optionally, add your project id/organization id
 llama_extract = LlamaExtract(api_key=os.getenv("LLAMA_CLOUD_API_KEY"))
 
 
-
-# local_embed_model = HuggingFaceEmbedding(
-#     model_name="sentence-transformers/all-MiniLM-L6-v2"
-# )
-
-local_embed_model = Settings.embed_model
-
-
-# 3. Define the Transformations for the Pipeline
-transformations = [
-    SentenceSplitter(chunk_size=512, chunk_overlap=50),
-    local_embed_model
-]
-
-
-# 5. Prepare your Documents
-documents_to_process = []
-
-
-# agent_name = "resume-screening"
+def _build_transformations():
+    return [
+        SentenceSplitter(chunk_size=512, chunk_overlap=50),
+        Settings.embed_model,
+    ]
 
 
 
@@ -147,10 +130,9 @@ async def initalize_db(name):
     chroma_collection = db.get_or_create_collection(name)
     vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
 
-    # 4. Create the Ingestion Pipeline
     pipeline = IngestionPipeline(
-        transformations=transformations,
-        vector_store=vector_store
+        transformations=_build_transformations(),
+        vector_store=vector_store,
     )
 
 
@@ -215,8 +197,9 @@ class Extractpdf():
                     break
                 elif job_status in ["FAILED", "CANCELLED"]:
                     print(f"❌ Extraction failed for: {os.path.basename(file_path)}")
+                    break
 
-                await asyncio.sleep(2) # Wait 2 seconds before checking again
+                await asyncio.sleep(2)
                 
             # 4. Process the successful result
             if job_status == "SUCCESS":
@@ -241,27 +224,27 @@ class Extractpdf():
 
     async def ingest(self, raw_resume_data: List[Dict[str, Any]]) -> List[Resume]:
         documents_to_process = []
-        for data in raw_resume_data: 
+        for data in raw_resume_data:
             technical_skills = data.get('technical_skills', {})
             skills = technical_skills.get('skills', []) if technical_skills else []
             skills_string = ", ".join(skills)
-        
-        metadata_dict = {
-            'skills': skills_string,
-            'country': data.get('country', 'Unknown'),
-            'domain': data.get('domain', 'Unknown'),
-            'years_of_experience': data.get('years_of_experience', 0),
-            'file_path': data.get('file_path', '')
-        }
 
-        text_payload = json.dumps(data, indent=2)
-        
-        doc = Document(
-            text=text_payload,
-            metadata=metadata_dict,
-            excluded_llm_metadata_keys=['file_path']
-        )
-        documents_to_process.append(doc)
+            metadata_dict = {
+                'skills': skills_string,
+                'country': data.get('country', 'Unknown'),
+                'domain': data.get('domain', 'Unknown'),
+                'years_of_experience': data.get('years_of_experience', 0),
+                'file_path': data.get('file_path', ''),
+            }
+
+            text_payload = json.dumps(data, indent=2)
+
+            doc = Document(
+                text=text_payload,
+                metadata=metadata_dict,
+                excluded_llm_metadata_keys=['file_path'],
+            )
+            documents_to_process.append(doc)
 
         print(f"Prepared {len(documents_to_process)} documents for ingestion.")
 

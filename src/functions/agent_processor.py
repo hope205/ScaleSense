@@ -296,7 +296,7 @@ class ResumeQueryProcessor:
     
     async def candidates_retriever_from_jd(self,job_description: str):
         # Use structured predict to infer the metadata filters and query string.
-        metadata_info = await self.get_metadata(job_description)
+        metadata_info = await self.get_query_metadata(job_description)
         filters = MetadataFilters(
         filters=[
             MetadataFilter(key="domain", operator=FilterOperator.EQ, value=metadata_info.domain),
@@ -306,7 +306,7 @@ class ResumeQueryProcessor:
         ],
         condition=FilterCondition.OR
     )
-        print(f"> Inferred filters: {filters.json()}")
+        print(f"> Inferred filters: {filters.model_dump_json()}")
         retriever = self.index.as_retriever(
         retrieval_mode="chunks",
         metadata_filters=filters,
